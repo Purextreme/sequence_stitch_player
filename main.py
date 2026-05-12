@@ -423,7 +423,7 @@ class SequenceStitchPlayer(QMainWindow):
 
     def apply_status_label_size(self) -> None:
         if self.details_expanded:
-            self.status_label.setMaximumHeight(220)
+            self.status_label.setMaximumHeight(360)
         else:
             self.status_label.setMaximumHeight(42)
 
@@ -807,6 +807,10 @@ class SequenceStitchPlayer(QMainWindow):
             f"Global Frame: {global_frame} / {total_frames}",
             f"Clip: {clip_name}",
             f"Clip Frame: {clip_frame} / {clip_total}",
+            "",
+            "Loaded Folders:",
+            self.clip_summary(),
+            "",
             f"FPS: {self.fps}",
             f"Display Size: {self.display_size_combo.currentText()}",
             f"State: {state}",
@@ -816,8 +820,6 @@ class SequenceStitchPlayer(QMainWindow):
             f"Dropped Frames: {self.dropped_frames}",
             f"Playback Health: {self.playback_health_text()}",
             f"Folder Watch: {self.folder_watch_status}",
-            "",
-            self.clip_summary(),
         ]
         if self.last_error_message:
             detail_lines.extend(["", f"Error: {self.last_error_message}"])
