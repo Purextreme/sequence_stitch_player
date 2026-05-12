@@ -764,12 +764,17 @@ class SequenceStitchPlayer(QMainWindow):
             return None
 
         self.pixmap_cache[cache_key] = pixmap
-        self.cache_memory_bytes += pixmap.width() * pixmap.height() * 4
+        self.recalculate_cache_memory()
         self.pixmap_cache.move_to_end(cache_key)
         while not self.cache_all_enabled and len(self.pixmap_cache) > CACHE_LIMIT:
-            _, old_pixmap = self.pixmap_cache.popitem(last=False)
-            self.cache_memory_bytes -= old_pixmap.width() * old_pixmap.height() * 4
+            self.pixmap_cache.popitem(last=False)
+        self.recalculate_cache_memory()
         return pixmap
+
+    def recalculate_cache_memory(self) -> None:
+        self.cache_memory_bytes = sum(
+            pixmap.width() * pixmap.height() * 4 for pixmap in self.pixmap_cache.values()
+        )
 
     def clip_summary(self) -> str:
         summaries = []
@@ -816,7 +821,7 @@ class SequenceStitchPlayer(QMainWindow):
             f"State: {state}",
             f"Loop: {loop}",
             f"Cache All: {'On' if self.cache_all_enabled else 'Off'}",
-            f"Memory Cache: {self.format_bytes(self.cache_memory_bytes)}",
+            f"Image Cache: {self.format_bytes(self.cache_memory_bytes)}",
             f"Dropped Frames: {self.dropped_frames}",
             f"Playback Health: {self.playback_health_text()}",
             f"Folder Watch: {self.folder_watch_status}",
