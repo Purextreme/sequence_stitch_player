@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from PIL import Image, ImageOps
-from PySide6.QtCore import Qt, QTimer, QSize
-from PySide6.QtGui import QFont, QImage, QKeySequence, QPixmap, QShortcut
+from PySide6.QtCore import QEvent, Qt, QTimer, QSize
+from PySide6.QtGui import QColor, QFont, QIcon, QImage, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -33,6 +33,8 @@ from PySide6.QtWidgets import (
 SUPPORTED_SUFFIXES = {".jpg", ".jpeg", ".png"}
 FPS_OPTIONS = (24, 25, 30, 60)
 CACHE_LIMIT = 48
+WATCH_INTERVAL_MS = 15_000
+WATCH_IDLE_AFTER_SECONDS = 120
 DISPLAY_SIZE_OPTIONS = (
     ("Fit Window", None),
     ("1280 x 720", (1280, 720)),
@@ -96,7 +98,12 @@ class SequenceStitchPlayer(QMainWindow):
         self.dropped_frames = 0
         self.last_playback_raw_index = 0
         self.updating_slider = False
+        self.folder_snapshot: tuple[tuple[str, int, int], ...] = ()
+        self.folder_watch_status = "Clean"
+        self.inactive_started_at: float | None = None
         self.pixmap_cache: OrderedDict[tuple[str, int, int], QPixmap] = OrderedDict()
+
+        self.setWindowIcon(self.create_app_icon())
 
         self.frame_view = FrameView(self.refresh_current_frame)
         self.status_label = QLabel()
@@ -158,6 +165,10 @@ class SequenceStitchPlayer(QMainWindow):
         self.health_label.setMinimumWidth(110)
         self.health_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
+        self.folder_watch_label = QLabel("● Clean")
+        self.folder_watch_label.setMinimumWidth(130)
+        self.folder_watch_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
         self._build_layout()
         self._install_shortcuts()
         self.update_optimize_button_state()
@@ -166,6 +177,11 @@ class SequenceStitchPlayer(QMainWindow):
         self.render_timer.setInterval(10)
         self.render_timer.timeout.connect(self.update_playback)
         self.render_timer.start()
+
+        self.folder_watch_timer = QTimer(self)
+        self.folder_watch_timer.setInterval(WATCH_INTERVAL_MS)
+        self.folder_watch_timer.timeout.connect(self.check_folder_watch)
+        self.folder_watch_timer.start()
 
         self.update_status()
 
@@ -200,6 +216,7 @@ class SequenceStitchPlayer(QMainWindow):
         timeline_row.addWidget(self.timeline_slider, stretch=1)
         timeline_row.addWidget(self.time_label)
         timeline_row.addWidget(self.health_label)
+        timeline_row.addWidget(self.folder_watch_label)
 
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.HLine)
@@ -228,6 +245,35 @@ class SequenceStitchPlayer(QMainWindow):
         for key, handler in shortcut_map.items():
             shortcut = QShortcut(QKeySequence(key), self)
             shortcut.activated.connect(handler)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() != QEvent.Type.ActivationChange:
+            return
+        if self.isActiveWindow():
+            self.inactive_started_at = None
+            if self.folder_watch_status == "Idle":
+                self.folder_watch_status = "Clean"
+                self.check_folder_watch()
+        elif self.inactive_started_at is None:
+            self.inactive_started_at = time.perf_counter()
+
+    def create_app_icon(self) -> QIcon:
+        pixmap = QPixmap(64, 64)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#171717"))
+        painter.drawRoundedRect(4, 4, 56, 56, 10, 10)
+        painter.setBrush(QColor("#e8f3ff"))
+        painter.drawRoundedRect(14, 16, 36, 32, 4, 4)
+        painter.setBrush(QColor("#37d67a"))
+        painter.drawRect(18, 20, 10, 24)
+        painter.setBrush(QColor("#4aa3ff"))
+        painter.drawRect(31, 20, 15, 24)
+        painter.end()
+        return QIcon(pixmap)
 
     def select_folder(self, clip_index: int) -> None:
         start_dir = str(self.clips[clip_index].folder or Path.home())
@@ -276,6 +322,8 @@ class SequenceStitchPlayer(QMainWindow):
             self.paused_frame_index = 0
 
         self.reset_playback_stats()
+        self.folder_snapshot = self.build_folder_snapshot()
+        self.folder_watch_status = "Clean"
         self.refresh_current_frame(force=True)
         self.update_status()
 
@@ -428,7 +476,45 @@ class SequenceStitchPlayer(QMainWindow):
         self.last_error_message = ""
         self.clear_cache()
         self.reset_playback_stats()
+        self.folder_snapshot = ()
+        self.folder_watch_status = "Clean"
         self.refresh_current_frame(force=True)
+        self.update_status()
+
+    def build_folder_snapshot(self) -> tuple[tuple[str, int, int], ...]:
+        entries = []
+        for clip in self.clips:
+            if clip.folder is None or not clip.folder.exists() or not clip.folder.is_dir():
+                continue
+            for path in self.scan_clip(clip):
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                entries.append((str(path), stat.st_mtime_ns, stat.st_size))
+        return tuple(entries)
+
+    def check_folder_watch(self) -> None:
+        if self.is_playing:
+            return
+        if self.inactive_started_at is not None:
+            inactive_seconds = time.perf_counter() - self.inactive_started_at
+            if inactive_seconds >= WATCH_IDLE_AFTER_SECONDS:
+                self.folder_watch_status = "Idle"
+                self.update_status()
+            return
+        if not any(clip.folder for clip in self.clips):
+            self.folder_watch_status = "Clean"
+            self.update_status()
+            return
+        if self.folder_watch_status == "Changed":
+            self.update_status()
+            return
+        current_snapshot = self.build_folder_snapshot()
+        if current_snapshot != self.folder_snapshot:
+            self.folder_watch_status = "Changed"
+        else:
+            self.folder_watch_status = "Clean"
         self.update_status()
 
     def seek_from_slider(self, value: int) -> None:
@@ -634,6 +720,7 @@ class SequenceStitchPlayer(QMainWindow):
             f"Loop: {loop}",
             f"Dropped Frames: {self.dropped_frames}",
             f"Playback Health: {self.playback_health_text()}",
+            f"Folder Watch: {self.folder_watch_status}",
             "",
             self.clip_summary(),
         ]
@@ -661,6 +748,15 @@ class SequenceStitchPlayer(QMainWindow):
         }[health_text]
         self.health_label.setText(f"● {health_text}")
         self.health_label.setStyleSheet(f"QLabel {{ color: {color}; font-weight: 600; }}")
+        watch_color = {
+            "Clean": "#37d67a",
+            "Changed": "#f2c94c",
+            "Idle": "#8a8a8a",
+        }[self.folder_watch_status]
+        self.folder_watch_label.setText(f"● Watch {self.folder_watch_status}")
+        self.folder_watch_label.setStyleSheet(
+            f"QLabel {{ color: {watch_color}; font-weight: 600; }}"
+        )
 
     def playback_health_text(self) -> str:
         if self.dropped_frames == 0:
