@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSlider,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -101,6 +103,9 @@ class SequenceStitchPlayer(QMainWindow):
         self.folder_snapshot: tuple[tuple[str, int, int], ...] = ()
         self.folder_watch_status = "Clean"
         self.inactive_started_at: float | None = None
+        self.cache_all_enabled = False
+        self.cache_memory_bytes = 0
+        self.details_expanded = False
         self.pixmap_cache: OrderedDict[tuple[str, int, int], QPixmap] = OrderedDict()
 
         self.setWindowIcon(self.create_app_icon())
@@ -133,6 +138,9 @@ class SequenceStitchPlayer(QMainWindow):
         self.shortcuts_button = QPushButton("Shortcuts")
         self.shortcuts_button.clicked.connect(self.show_shortcuts)
 
+        self.readme_button = QPushButton("README")
+        self.readme_button.clicked.connect(self.show_readme)
+
         self.optimize_button = QPushButton("Optimize Folder...")
         self.optimize_button.clicked.connect(self.optimize_folder)
 
@@ -149,6 +157,13 @@ class SequenceStitchPlayer(QMainWindow):
 
         self.loop_checkbox = QCheckBox("Loop")
         self.loop_checkbox.stateChanged.connect(self.toggle_loop_from_checkbox)
+
+        self.cache_all_checkbox = QCheckBox("Cache All")
+        self.cache_all_checkbox.stateChanged.connect(self.toggle_cache_all)
+
+        self.details_button = QPushButton("Details")
+        self.details_button.setCheckable(True)
+        self.details_button.toggled.connect(self.toggle_details)
 
         self.timeline_slider = QSlider(Qt.Orientation.Horizontal)
         self.timeline_slider.setMinimum(0)
@@ -208,7 +223,10 @@ class SequenceStitchPlayer(QMainWindow):
         control_row.addWidget(self.display_size_combo)
         control_row.addWidget(self.optimize_button)
         control_row.addWidget(self.loop_checkbox)
+        control_row.addWidget(self.cache_all_checkbox)
         control_row.addWidget(self.shortcuts_button)
+        control_row.addWidget(self.readme_button)
+        control_row.addWidget(self.details_button)
         control_row.addStretch(1)
 
         timeline_row = QHBoxLayout()
@@ -229,6 +247,7 @@ class SequenceStitchPlayer(QMainWindow):
         root.addWidget(self.frame_view, stretch=1)
         root.addWidget(self.status_label)
         self.setCentralWidget(central)
+        self.apply_status_label_size()
 
     def _install_shortcuts(self) -> None:
         shortcut_map = {
@@ -325,6 +344,8 @@ class SequenceStitchPlayer(QMainWindow):
         self.folder_snapshot = self.build_folder_snapshot()
         self.folder_watch_status = "Clean"
         self.refresh_current_frame(force=True)
+        if self.cache_all_enabled and self.timeline:
+            self.cache_all_frames()
         self.update_status()
 
         if was_playing and self.timeline:
@@ -375,6 +396,8 @@ class SequenceStitchPlayer(QMainWindow):
         self.update_optimize_button_state()
         self.clear_cache()
         self.refresh_current_frame(force=True)
+        if self.cache_all_enabled and self.timeline:
+            self.cache_all_frames()
         self.update_status()
 
     def update_optimize_button_state(self) -> None:
@@ -383,6 +406,26 @@ class SequenceStitchPlayer(QMainWindow):
     def toggle_loop_from_checkbox(self) -> None:
         self.loop_enabled = self.loop_checkbox.isChecked()
         self.update_status()
+
+    def toggle_cache_all(self) -> None:
+        self.cache_all_enabled = self.cache_all_checkbox.isChecked()
+        self.clear_cache()
+        self.refresh_current_frame(force=True)
+        if self.cache_all_enabled and self.timeline:
+            self.cache_all_frames()
+        self.update_status()
+
+    def toggle_details(self, checked: bool) -> None:
+        self.details_expanded = checked
+        self.details_button.setText("Hide Details" if checked else "Details")
+        self.apply_status_label_size()
+        self.update_status()
+
+    def apply_status_label_size(self) -> None:
+        if self.details_expanded:
+            self.status_label.setMaximumHeight(220)
+        else:
+            self.status_label.setMaximumHeight(42)
 
     def toggle_loop_shortcut(self) -> None:
         self.loop_checkbox.setChecked(not self.loop_checkbox.isChecked())
@@ -460,6 +503,7 @@ class SequenceStitchPlayer(QMainWindow):
 
     def clear_cache(self) -> None:
         self.pixmap_cache.clear()
+        self.cache_memory_bytes = 0
 
     def reset_playback_stats(self) -> None:
         self.dropped_frames = 0
@@ -542,6 +586,24 @@ class SequenceStitchPlayer(QMainWindow):
                 ]
             ),
         )
+
+    def show_readme(self) -> None:
+        readme_path = Path(__file__).with_name("README.md")
+        try:
+            content = readme_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            QMessageBox.warning(self, "README", f"Failed to read README.md:\n{exc}")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("README")
+        dialog.resize(760, 620)
+        layout = QVBoxLayout(dialog)
+        viewer = QTextEdit()
+        viewer.setReadOnly(True)
+        viewer.setPlainText(content)
+        layout.addWidget(viewer)
+        dialog.exec()
 
     def optimize_folder(self) -> None:
         if self.display_size is None:
@@ -629,6 +691,28 @@ class SequenceStitchPlayer(QMainWindow):
         else:
             image.save(path, optimize=True)
 
+    def cache_all_frames(self) -> None:
+        if not self.timeline:
+            return
+        progress = QProgressDialog("Caching frames in memory...", "Cancel", 0, len(self.timeline), self)
+        progress.setWindowTitle("Cache All")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+
+        for index, frame in enumerate(self.timeline, start=1):
+            if progress.wasCanceled():
+                self.cache_all_checkbox.setChecked(False)
+                self.clear_cache()
+                self.update_status()
+                return
+            progress.setValue(index - 1)
+            progress.setLabelText(f"Caching {index} / {len(self.timeline)}\n{frame.path.name}")
+            QApplication.processEvents()
+            self.get_scaled_pixmap(frame.path)
+
+        progress.setValue(len(self.timeline))
+        self.update_status()
+
     def refresh_current_frame(self, force: bool = False) -> None:
         if not self.timeline:
             self.frame_view.setPixmap(QPixmap())
@@ -680,9 +764,11 @@ class SequenceStitchPlayer(QMainWindow):
             return None
 
         self.pixmap_cache[cache_key] = pixmap
+        self.cache_memory_bytes += pixmap.width() * pixmap.height() * 4
         self.pixmap_cache.move_to_end(cache_key)
-        while len(self.pixmap_cache) > CACHE_LIMIT:
-            self.pixmap_cache.popitem(last=False)
+        while not self.cache_all_enabled and len(self.pixmap_cache) > CACHE_LIMIT:
+            _, old_pixmap = self.pixmap_cache.popitem(last=False)
+            self.cache_memory_bytes -= old_pixmap.width() * old_pixmap.height() * 4
         return pixmap
 
     def clip_summary(self) -> str:
@@ -710,7 +796,14 @@ class SequenceStitchPlayer(QMainWindow):
             clip_total = 0
 
         self.update_timeline_controls(total_frames)
-        lines = [
+        summary_line = (
+            f"Global: {global_frame}/{total_frames} | "
+            f"Clip: {clip_name} {clip_frame}/{clip_total} | "
+            f"FPS: {self.fps} | State: {state} | Loop: {loop} | "
+            f"Cache: {self.format_bytes(self.cache_memory_bytes)} | "
+            f"Drops: {self.dropped_frames} | Watch: {self.folder_watch_status}"
+        )
+        detail_lines = [
             f"Global Frame: {global_frame} / {total_frames}",
             f"Clip: {clip_name}",
             f"Clip Frame: {clip_frame} / {clip_total}",
@@ -718,6 +811,8 @@ class SequenceStitchPlayer(QMainWindow):
             f"Display Size: {self.display_size_combo.currentText()}",
             f"State: {state}",
             f"Loop: {loop}",
+            f"Cache All: {'On' if self.cache_all_enabled else 'Off'}",
+            f"Memory Cache: {self.format_bytes(self.cache_memory_bytes)}",
             f"Dropped Frames: {self.dropped_frames}",
             f"Playback Health: {self.playback_health_text()}",
             f"Folder Watch: {self.folder_watch_status}",
@@ -725,8 +820,8 @@ class SequenceStitchPlayer(QMainWindow):
             self.clip_summary(),
         ]
         if self.last_error_message:
-            lines.extend(["", f"Error: {self.last_error_message}"])
-        self.status_label.setText("\n".join(lines))
+            detail_lines.extend(["", f"Error: {self.last_error_message}"])
+        self.status_label.setText("\n".join(detail_lines) if self.details_expanded else summary_line)
 
     def update_timeline_controls(self, total_frames: int) -> None:
         self.updating_slider = True
@@ -770,6 +865,16 @@ class SequenceStitchPlayer(QMainWindow):
         minutes = int(seconds // 60)
         remaining = seconds - minutes * 60
         return f"{minutes:02d}:{remaining:05.2f}"
+
+    @staticmethod
+    def format_bytes(byte_count: int) -> str:
+        if byte_count >= 1024**3:
+            return f"{byte_count / 1024**3:.2f} GB"
+        if byte_count >= 1024**2:
+            return f"{byte_count / 1024**2:.1f} MB"
+        if byte_count >= 1024:
+            return f"{byte_count / 1024:.1f} KB"
+        return f"{byte_count} B"
 
 
 def main() -> int:
