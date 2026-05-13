@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 from PySide6.QtCore import QEvent, Qt, QTimer, QSize
-from PySide6.QtGui import QColor, QFont, QIcon, QImage, QKeySequence, QPainter, QPixmap, QShortcut
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QImage, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -21,12 +21,14 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressDialog,
     QPushButton,
     QSizePolicy,
     QSlider,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -136,14 +138,31 @@ class SequenceStitchPlayer(QMainWindow):
         self.clear_button = QPushButton("Clear All")
         self.clear_button.clicked.connect(self.clear_all)
 
-        self.shortcuts_button = QPushButton("Shortcuts")
-        self.shortcuts_button.clicked.connect(self.show_shortcuts)
+        self.optimize_action = QAction("Optimize Folder...", self)
+        self.optimize_action.triggered.connect(self.optimize_folder)
 
-        self.readme_button = QPushButton("README")
-        self.readme_button.clicked.connect(self.show_readme)
+        self.shortcuts_action = QAction("Shortcuts", self)
+        self.shortcuts_action.triggered.connect(self.show_shortcuts)
 
-        self.optimize_button = QPushButton("Optimize Folder...")
-        self.optimize_button.clicked.connect(self.optimize_folder)
+        self.readme_action = QAction("README", self)
+        self.readme_action.triggered.connect(self.show_readme)
+
+        self.details_action = QAction("Show Details", self)
+        self.details_action.setCheckable(True)
+        self.details_action.toggled.connect(self.toggle_details)
+
+        self.tools_menu = QMenu(self)
+        self.tools_menu.addAction(self.optimize_action)
+        self.tools_menu.addSeparator()
+        self.tools_menu.addAction(self.shortcuts_action)
+        self.tools_menu.addAction(self.readme_action)
+        self.tools_menu.addSeparator()
+        self.tools_menu.addAction(self.details_action)
+
+        self.tools_button = QToolButton()
+        self.tools_button.setText("Tools")
+        self.tools_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.tools_button.setMenu(self.tools_menu)
 
         self.fps_combo = QComboBox()
         for option in FPS_OPTIONS:
@@ -161,10 +180,6 @@ class SequenceStitchPlayer(QMainWindow):
 
         self.cache_all_checkbox = QCheckBox("Cache All")
         self.cache_all_checkbox.stateChanged.connect(self.toggle_cache_all)
-
-        self.details_button = QPushButton("Details")
-        self.details_button.setCheckable(True)
-        self.details_button.toggled.connect(self.toggle_details)
 
         self.timeline_slider = QSlider(Qt.Orientation.Horizontal)
         self.timeline_slider.setMinimum(0)
@@ -209,23 +224,35 @@ class SequenceStitchPlayer(QMainWindow):
                 background: #181818;
                 color: #f0f0f0;
             }
-            QPushButton, QComboBox {
+            QPushButton, QToolButton, QComboBox {
                 background: #2a2a2a;
                 border: 1px solid #3a3a3a;
                 border-radius: 4px;
-                padding: 6px 10px;
-                min-height: 26px;
+                padding: 4px 9px;
+                min-height: 22px;
             }
-            QPushButton:hover, QComboBox:hover {
+            QPushButton:hover, QToolButton:hover, QComboBox:hover {
                 background: #343434;
                 border-color: #505050;
             }
-            QPushButton:pressed {
+            QPushButton:pressed, QToolButton:pressed {
                 background: #202020;
             }
-            QPushButton:disabled {
+            QPushButton:disabled, QToolButton:disabled {
                 color: #777777;
                 background: #222222;
+            }
+            QMenu {
+                background: #242424;
+                color: #f0f0f0;
+                border: 1px solid #3a3a3a;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 22px;
+            }
+            QMenu::item:selected {
+                background: #3a3a3a;
             }
             QCheckBox {
                 spacing: 6px;
@@ -266,15 +293,8 @@ class SequenceStitchPlayer(QMainWindow):
         playback_row.addSpacing(12)
         playback_row.addWidget(self.loop_checkbox)
         playback_row.addWidget(self.cache_all_checkbox)
+        playback_row.addWidget(self.tools_button)
         playback_row.addStretch(1)
-
-        tools_row = QHBoxLayout()
-        tools_row.setSpacing(8)
-        tools_row.addWidget(self.optimize_button)
-        tools_row.addWidget(self.shortcuts_button)
-        tools_row.addWidget(self.readme_button)
-        tools_row.addWidget(self.details_button)
-        tools_row.addStretch(1)
 
         timeline_row = QHBoxLayout()
         timeline_row.setSpacing(8)
@@ -289,7 +309,6 @@ class SequenceStitchPlayer(QMainWindow):
 
         root.addLayout(folder_row)
         root.addLayout(playback_row)
-        root.addLayout(tools_row)
         root.addLayout(timeline_row)
         root.addWidget(divider)
         root.addWidget(self.frame_view, stretch=1)
@@ -449,7 +468,7 @@ class SequenceStitchPlayer(QMainWindow):
         self.update_status()
 
     def update_optimize_button_state(self) -> None:
-        self.optimize_button.setEnabled(self.display_size is not None)
+        self.optimize_action.setEnabled(self.display_size is not None)
 
     def toggle_loop_from_checkbox(self) -> None:
         self.loop_enabled = self.loop_checkbox.isChecked()
@@ -465,7 +484,7 @@ class SequenceStitchPlayer(QMainWindow):
 
     def toggle_details(self, checked: bool) -> None:
         self.details_expanded = checked
-        self.details_button.setText("Hide Details" if checked else "Details")
+        self.details_action.setText("Hide Details" if checked else "Show Details")
         self.apply_status_label_size()
         self.update_status()
 
