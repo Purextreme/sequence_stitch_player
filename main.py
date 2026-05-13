@@ -87,7 +87,7 @@ class SequenceStitchPlayer(QMainWindow):
         self.setWindowTitle("Sequence Stitch Player")
         self.resize(1280, 820)
 
-        self.clips = [Clip("A"), Clip("B"), Clip("C")]
+        self.clips = [Clip("A"), Clip("B"), Clip("C"), Clip("D")]
         self.timeline: list[TimelineFrame] = []
         self.current_frame_index = 0
         self.paused_frame_index = 0
@@ -122,6 +122,7 @@ class SequenceStitchPlayer(QMainWindow):
             QPushButton("Select Folder A"),
             QPushButton("Select Folder B"),
             QPushButton("Select Folder C"),
+            QPushButton("Select Folder D"),
         ]
         for index, button in enumerate(self.folder_buttons):
             button.clicked.connect(lambda checked=False, idx=index: self.select_folder(idx))
@@ -202,6 +203,46 @@ class SequenceStitchPlayer(QMainWindow):
 
     def _build_layout(self) -> None:
         central = QWidget()
+        central.setStyleSheet(
+            """
+            QWidget {
+                background: #181818;
+                color: #f0f0f0;
+            }
+            QPushButton, QComboBox {
+                background: #2a2a2a;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                padding: 6px 10px;
+                min-height: 26px;
+            }
+            QPushButton:hover, QComboBox:hover {
+                background: #343434;
+                border-color: #505050;
+            }
+            QPushButton:pressed {
+                background: #202020;
+            }
+            QPushButton:disabled {
+                color: #777777;
+                background: #222222;
+            }
+            QCheckBox {
+                spacing: 6px;
+            }
+            QSlider::groove:horizontal {
+                height: 5px;
+                background: #333333;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                width: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+                background: #6aa9ff;
+            }
+            """
+        )
         root = QVBoxLayout(central)
         root.setContentsMargins(14, 14, 14, 14)
         root.setSpacing(10)
@@ -212,22 +253,28 @@ class SequenceStitchPlayer(QMainWindow):
             folder_row.addWidget(button)
         folder_row.addStretch(1)
 
-        control_row = QHBoxLayout()
-        control_row.setSpacing(8)
-        control_row.addWidget(self.play_button)
-        control_row.addWidget(self.reload_button)
-        control_row.addWidget(self.clear_button)
-        control_row.addWidget(QLabel("FPS"))
-        control_row.addWidget(self.fps_combo)
-        control_row.addWidget(QLabel("Display Size"))
-        control_row.addWidget(self.display_size_combo)
-        control_row.addWidget(self.optimize_button)
-        control_row.addWidget(self.loop_checkbox)
-        control_row.addWidget(self.cache_all_checkbox)
-        control_row.addWidget(self.shortcuts_button)
-        control_row.addWidget(self.readme_button)
-        control_row.addWidget(self.details_button)
-        control_row.addStretch(1)
+        playback_row = QHBoxLayout()
+        playback_row.setSpacing(8)
+        playback_row.addWidget(self.play_button)
+        playback_row.addWidget(self.reload_button)
+        playback_row.addWidget(self.clear_button)
+        playback_row.addSpacing(12)
+        playback_row.addWidget(QLabel("FPS"))
+        playback_row.addWidget(self.fps_combo)
+        playback_row.addWidget(QLabel("Display Size"))
+        playback_row.addWidget(self.display_size_combo)
+        playback_row.addSpacing(12)
+        playback_row.addWidget(self.loop_checkbox)
+        playback_row.addWidget(self.cache_all_checkbox)
+        playback_row.addStretch(1)
+
+        tools_row = QHBoxLayout()
+        tools_row.setSpacing(8)
+        tools_row.addWidget(self.optimize_button)
+        tools_row.addWidget(self.shortcuts_button)
+        tools_row.addWidget(self.readme_button)
+        tools_row.addWidget(self.details_button)
+        tools_row.addStretch(1)
 
         timeline_row = QHBoxLayout()
         timeline_row.setSpacing(8)
@@ -241,7 +288,8 @@ class SequenceStitchPlayer(QMainWindow):
         divider.setFrameShadow(QFrame.Shadow.Sunken)
 
         root.addLayout(folder_row)
-        root.addLayout(control_row)
+        root.addLayout(playback_row)
+        root.addLayout(tools_row)
         root.addLayout(timeline_row)
         root.addWidget(divider)
         root.addWidget(self.frame_view, stretch=1)
@@ -423,7 +471,7 @@ class SequenceStitchPlayer(QMainWindow):
 
     def apply_status_label_size(self) -> None:
         if self.details_expanded:
-            self.status_label.setMaximumHeight(360)
+            self.status_label.setMaximumHeight(420)
         else:
             self.status_label.setMaximumHeight(42)
 
