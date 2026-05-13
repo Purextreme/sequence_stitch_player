@@ -218,58 +218,6 @@ class SequenceStitchPlayer(QMainWindow):
 
     def _build_layout(self) -> None:
         central = QWidget()
-        central.setStyleSheet(
-            """
-            QWidget {
-                background: #181818;
-                color: #f0f0f0;
-            }
-            QPushButton, QToolButton, QComboBox {
-                background: #2a2a2a;
-                border: 1px solid #3a3a3a;
-                border-radius: 4px;
-                padding: 4px 9px;
-                min-height: 22px;
-            }
-            QPushButton:hover, QToolButton:hover, QComboBox:hover {
-                background: #343434;
-                border-color: #505050;
-            }
-            QPushButton:pressed, QToolButton:pressed {
-                background: #202020;
-            }
-            QPushButton:disabled, QToolButton:disabled {
-                color: #777777;
-                background: #222222;
-            }
-            QMenu {
-                background: #242424;
-                color: #f0f0f0;
-                border: 1px solid #3a3a3a;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 6px 22px;
-            }
-            QMenu::item:selected {
-                background: #3a3a3a;
-            }
-            QCheckBox {
-                spacing: 6px;
-            }
-            QSlider::groove:horizontal {
-                height: 5px;
-                background: #333333;
-                border-radius: 2px;
-            }
-            QSlider::handle:horizontal {
-                width: 14px;
-                margin: -5px 0;
-                border-radius: 7px;
-                background: #6aa9ff;
-            }
-            """
-        )
         root = QVBoxLayout(central)
         root.setContentsMargins(14, 14, 14, 14)
         root.setSpacing(10)
