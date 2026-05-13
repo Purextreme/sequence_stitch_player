@@ -95,7 +95,7 @@ class SequenceStitchPlayer(QMainWindow):
         self.paused_frame_index = 0
         self.playback_started_at = 0.0
         self.is_playing = False
-        self.loop_enabled = False
+        self.loop_enabled = True
         self.fps = 30
         self.display_size: tuple[int, int] | None = None
         self.last_error_message = ""
@@ -176,6 +176,7 @@ class SequenceStitchPlayer(QMainWindow):
         self.display_size_combo.currentIndexChanged.connect(self.change_display_size)
 
         self.loop_checkbox = QCheckBox("Loop")
+        self.loop_checkbox.setChecked(self.loop_enabled)
         self.loop_checkbox.stateChanged.connect(self.toggle_loop_from_checkbox)
 
         self.cache_all_checkbox = QCheckBox("Cache All")
